@@ -4,8 +4,6 @@ CLI for [linux.do](https://linux.do) forum.
 
 ## Setup
 
-Requires [localwebpy](https://github.com/user/localwebpy) at `~/w/localwebpy` for Cloudflare bypass.
-
 ```bash
 uv sync
 ```

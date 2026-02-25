@@ -1,23 +1,12 @@
-"""Fetch data from linux.do Discourse API via localwebpy (Cloudflare bypass)."""
+"""Fetch data from linux.do Discourse API."""
 
 from __future__ import annotations
 
-import json
-import shutil
-import subprocess
 from dataclasses import dataclass
-from pathlib import Path
+
+from curl_cffi import requests as curl_requests
 
 BASE_URL = "https://linux.do"
-LOCALWEBPY_DIR = str(Path.home() / "w" / "localwebpy")
-
-
-def _find_uv() -> str:
-    uv = shutil.which("uv")
-    if not uv:
-        msg = "uv not found in PATH"
-        raise RuntimeError(msg)
-    return uv
 
 
 @dataclass(slots=True)
@@ -76,38 +65,16 @@ class Category:
 
 
 def _fetch_json(path: str) -> dict:
-    """Fetch JSON from linux.do via localwebpy browser fallback."""
+    """Fetch JSON from linux.do."""
     url = f"{BASE_URL}{path}"
-    result = subprocess.run(
-        [
-            _find_uv(),
-            "run",
-            "--directory",
-            LOCALWEBPY_DIR,
-            "localwebpy",
-            "visit",
-            url,
-            "-c",
-            "300",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=90,
+    resp = curl_requests.get(
+        url,
+        impersonate="chrome",
+        headers={"Accept": "application/json"},
+        timeout=30,
     )
-    if result.returncode != 0:
-        msg = f"Failed to fetch {url}: {result.stderr}"
-        raise RuntimeError(msg)
-
-    raw = result.stdout
-    # localwebpy outputs metadata lines before JSON — find the JSON start
-    for i, line in enumerate(raw.split("\n")):
-        stripped = line.strip()
-        if stripped.startswith("{"):
-            json_text = "\n".join(raw.split("\n")[i:])
-            return json.loads(json_text)
-
-    msg = f"No JSON found in response from {url}"
-    raise RuntimeError(msg)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def fetch_topics(
