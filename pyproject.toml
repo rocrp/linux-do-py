@@ -1,0 +1,20 @@
+[project]
+name = "linux-do-py"
+version = "0.1.0"
+description = "CLI for linux.do forum"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "hatchling>=1.29.0",
+    "httpx>=0.28.1",
+    "markdownify>=1.2.2",
+    "rich>=14.3.3",
+    "typer>=0.24.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+ldo = "linux_do_py.cli:app"
