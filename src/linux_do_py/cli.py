@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import re
 from datetime import datetime, timezone
 from typing import Annotated
@@ -15,8 +17,22 @@ from rich.text import Text
 
 from .api import fetch_categories, fetch_topic_detail, fetch_topics
 
+_json_output = False
+
 app = typer.Typer(help="linux.do CLI — browse the forum from your terminal")
 console = Console()
+
+
+@app.callback()
+def _main(
+    json_output: Annotated[bool, typer.Option("--json", help="Output as JSON")] = False,
+) -> None:
+    global _json_output
+    _json_output = json_output
+
+
+def _dump(obj: object) -> None:
+    print(json.dumps(obj, ensure_ascii=False, indent=2))
 
 
 def _relative_time(iso: str) -> str:
@@ -47,6 +63,11 @@ def _format_count(n: int) -> str:
 
 
 def _render_topics(topics: list, title: str, limit: int) -> None:
+    topics = topics[:limit]
+    if _json_output:
+        _dump([dataclasses.asdict(t) for t in topics])
+        return
+
     table = Table(title=title, show_lines=False, pad_edge=False, expand=True)
     table.add_column("ID", style="cyan", width=7, justify="right")
     table.add_column("Title", ratio=3)
@@ -55,7 +76,7 @@ def _render_topics(topics: list, title: str, limit: int) -> None:
     table.add_column("Replies", justify="right", width=7)
     table.add_column("Activity", justify="right", width=8)
 
-    for t in topics[:limit]:
+    for t in topics:
         title_text = Text(t.title, overflow="ellipsis", no_wrap=True)
         if t.pinned:
             title_text.stylize("bold yellow")
@@ -119,6 +140,10 @@ def categories() -> None:
     with console.status("Fetching categories..."):
         cats = fetch_categories()
 
+    if _json_output:
+        _dump([dataclasses.asdict(c) for c in cats])
+        return
+
     table = Table(title="Categories", expand=True)
     table.add_column("ID", width=5, justify="right")
     table.add_column("Name", ratio=1)
@@ -138,6 +163,17 @@ def categories() -> None:
     console.print(table)
 
 
+def _clean_post_html(cooked: str) -> str:
+    """Convert post HTML to clean markdown."""
+    text = markdownify(cooked, strip=["img"]).strip()
+    text = re.sub(r"\[([^\]]*?\d+[×x]\d+[^\]]*?)\]\([^)]+\)", r"[image]", text)
+    text = re.sub(r"\[\s*\]\([^)]+\)", "", text)
+    text = re.sub(r"\n\s*\(https?://linux\.do/uploads/[^)]+\)\s*\n", "\n", text)
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    return text
+
+
 @app.command()
 def read(
     topic_id: Annotated[int, typer.Argument(help="Topic ID to read")],
@@ -149,7 +185,26 @@ def read(
         data = fetch_topic_detail(topic_id, page=page)
 
     title = data.get("title", "Unknown")
-    posts = data.get("post_stream", {}).get("posts", [])
+    posts = data.get("post_stream", {}).get("posts", [])[:limit]
+
+    if _json_output:
+        _dump({
+            "id": topic_id,
+            "title": title,
+            "url": f"https://linux.do/t/topic/{topic_id}",
+            "page": page,
+            "posts": [
+                {
+                    "post_number": p.get("post_number", 0),
+                    "username": p.get("username", "?"),
+                    "created_at": p.get("created_at", ""),
+                    "like_count": p.get("like_count", 0),
+                    "content": _clean_post_html(p.get("cooked", "")),
+                }
+                for p in posts
+            ],
+        })
+        return
 
     console.print(
         Panel(
@@ -158,23 +213,13 @@ def read(
         )
     )
 
-    for post in posts[:limit]:
+    for post in posts:
         username = post.get("username", "?")
         created = _relative_time(post.get("created_at", ""))
         post_num = post.get("post_number", 0)
         likes = post.get("like_count", 0)
 
-        cooked = post.get("cooked", "")
-        # Convert HTML to readable text
-        text = markdownify(cooked, strip=["img"]).strip()
-        # Remove leftover image links: [text](url "title") pointing to uploads
-        text = re.sub(r"\[([^\]]*?\d+[×x]\d+[^\]]*?)\]\([^)]+\)", r"[image]", text)
-        text = re.sub(r"\[\s*\]\([^)]+\)", "", text)
-        # Remove bare parenthesized URLs from stripped images
-        text = re.sub(r"\n\s*\(https?://linux\.do/uploads/[^)]+\)\s*\n", "\n", text)
-        # Collapse excessive newlines
-        while "\n\n\n" in text:
-            text = text.replace("\n\n\n", "\n\n")
+        text = _clean_post_html(post.get("cooked", ""))
 
         header = f"[bold cyan]#{post_num}[/bold cyan] [bold]{username}[/bold] [dim]{created} ago[/dim]"
         if likes:

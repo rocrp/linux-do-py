@@ -19,4 +19,5 @@ uv run ldo latest -o views      # latest by views
 uv run ldo categories           # list categories
 uv run ldo read 482293          # read topic posts
 uv run ldo read 482293 --page 2 # page 2
+uv run ldo --json hot -n 5     # JSON output
 ```
